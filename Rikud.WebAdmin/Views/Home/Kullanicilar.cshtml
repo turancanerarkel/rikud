@@ -1,0 +1,139 @@
+﻿@{
+    Layout = "_Layout";
+}
+
+<div class="row">
+    <div class="col-xl-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row">
+                    <div class="col-md-10"><h4 class="card-title mb-0">Kullanicilar</h4></div>
+                   @*  @if (UserExtension.IsRole("Administrator") || UserExtension.IsRole("Admin"))
+                    { *@
+                        <div class="col-md-2">
+                            <a type="button" class="btn btn-success waves-effect waves-light" asp-action="KullaniciEkle" asp-controller="Home">Yeni Kullanici</a>
+                        </div>
+                    @* } *@
+                </div>
+                <div class="col-md-2">
+                </div>
+            </div><!-- end card header -->
+            <div class="card-body">
+                <div id="table-gridjs"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+
+@section scripts {
+    <script>
+            $(document).ready(function() {
+
+                    LoadUserGrid(0);
+                    $('.gridjs-search-input').attr("placeholder", "Ara...")
+                });
+
+                function LoadUserGrid() {
+
+                    new gridjs.Grid(
+                        {
+                            language: {
+                                pagination: {
+                                    previous: 'Geri',
+                                    next: 'Ileri',
+                                    showing: '\n',
+                                    to: 'ile',
+                                    of: 'arası',
+                                    results: 'Sonuc(lar)',
+                                }
+                            },
+                            columns: [{ name: "", sort: { enabled: !1 }, formatter: function(e) { return gridjs.html('<i class="bx bx-user"></i>') } }
+                                , "Kullanıcı adı"
+                                , "Rol"
+                                , "Firma"
+                                , "Oturum Sayısı"
+                                , "Kayıt Tarihi"
+                                , { name: "Aktif/Pasif", width: "180px" }
+                                , "#"
+                            ]
+                            , pagination: { limit: 10 }, sort: !0, search: !0,
+                            server: {
+                                url: '/Home/_KullaniciList',
+                                then: data => data.map(item => [
+                                gridjs.html('<i class="bx bx-user"></i>'),                        // 1. kolon (ikon)
+                                item.username,                                                   // 2. kolon
+                                item.role,
+                                item.companyName,                                                   // 2. kolon
+                                item.sessionCount,                                               // 4. kolon
+                                new Date(item.createdDate).toLocaleString('tr-TR'),              // 5. kolon (tarih formatlı)
+                                      gridjs.html(`<input
+          type="text"
+          class="form-control text-center"
+          readonly
+          disabled
+          style="font-weight:bold; color:${item.active ? 'green' : 'red'}"
+          value="${item.active ? 'Aktif' : 'Pasif'}"
+        />`),              // 5. kolon (tarih formatlı)
+                                gridjs.html(
+                                `<a href='@Url.Action("KullaniciDuzenle", "Home")?Id=${item.id}' class='btn btn-warning waves-effect waves-light'>Güncelle</a>
+        <button type='button'
+                class='btn btn-primary waves-effect waves-light ms-2'
+                onclick='confirmDelete(${item.id}, ${item.rolId})'>
+            Sil
+        </button>`
+                                )                                                                // 6. kolon (aksiyonlar)
+                            ]),
+                                total: data => data.count
+                            }
+                        }).render(document.getElementById("table-gridjs"));
+
+                }
+
+                        function confirmDelete(id, rolId) {
+
+                    // Eğer Administrator (1) veya LocalAdmin (2) ise silme
+                    if (rolId === 1 || rolId === 2) {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Silme Engellendi',
+                            text: 'Administrator veya Local Admin kullanıcıları silinemez!',
+                            confirmButtonText: 'Tamam',
+                            confirmButtonColor: '#3085d6'
+                        });
+                        return;
+                    }
+
+                    if (id === parseInt("@ViewBag.UserId")) {
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Silme Engellendi',
+                            text: 'Kendi kullanıcınızı silemezsiniz!',
+                            confirmButtonText: 'Tamam',
+                            confirmButtonColor: '#3085d6'
+                        });
+                        return;
+                    }
+
+                    // Normal kullanıcılar için onay sor
+                    Swal.fire({
+                        title: 'Emin misiniz?',
+                        text: 'Bu kullanıcıyı silmek istediğinizden emin misiniz?',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#d33',
+                        cancelButtonColor: '#6c757d',
+                        confirmButtonText: 'Evet, sil',
+                        cancelButtonText: 'Vazgeç'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            // Silme isteğini yönlendir
+                            window.location.href = '@Url.Action("KullaniciSil", "Home")?Id=' + id;
+                        }
+                    });
+                }
+
+    </script>
+
+}

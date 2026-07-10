@@ -1,0 +1,95 @@
+﻿@{
+    Layout = "_Layout";
+}
+
+<div class="row">
+    <div class="col-xl-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row">
+                    <div class="col-md-10"><h4 class="card-title mb-0">Kullanici Oturumlari</h4></div>
+                </div>
+                <div class="col-md-2">
+                </div>
+            </div><!-- end card header -->
+            <div class="card-body">
+                <div id="table-gridjs"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+
+@section scripts {
+    <script>
+            $(document).ready(function() {
+
+                    LoadUserGrid(0);
+                    $('.gridjs-search-input').attr("placeholder", "Ara...")
+                });
+
+                function LoadUserGrid() {
+
+                    new gridjs.Grid(
+                        {
+                            language: {
+                                pagination: {
+                                    previous: 'Geri',
+                                    next: 'Ileri',
+                                    showing: '\n',
+                                    to: 'ile',
+                                    of: 'arası',
+                                    results: 'Sonuc(lar)',
+                                }
+                            },
+                            columns: [
+                                , "Kullanıcı adı"
+                                , "Ip Adresi"
+                                , "Oturum"
+                                , "Tarayici"
+                                , "Kayıt Tarihi"
+                                , "#"
+                            ]
+                            , pagination: { limit: 10 }, sort: !0, search: !0,
+                            server: {
+                                url: '/Home/_KullaniciOturumlari',
+                                then: data => data.map(item => [
+                                item.username,                                                   // 2. kolon
+                                item.ipAddress,
+                                item.oturum,                                                   // 3. kolon
+                                item.browser,                                                   // 3. kolon
+                                new Date(item.createdDate).toLocaleString('tr-TR'),              // 5. kolon (tarih formatlı)
+                                gridjs.html(
+                                `<button type='button' class='btn btn-primary waves-effect waves-light ms-2' onclick='confirmDelete(${item.id})'> Oturum Sil </button>`
+                                )                                                                // 6. kolon (aksiyonlar)
+                            ]),
+                                total: data => data.count
+                            }
+                        }).render(document.getElementById("table-gridjs"));
+
+                }
+
+                        function confirmDelete(id) {
+
+                    // Normal kullanıcılar için onay sor
+                    Swal.fire({
+                        title: 'Emin misiniz?',
+                        text: 'Bu kullanıcının oturumunu silmek istediğinizden emin misiniz?',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#d33',
+                        cancelButtonColor: '#6c757d',
+                        confirmButtonText: 'Evet, sil',
+                        cancelButtonText: 'Vazgeç'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            // Silme isteğini yönlendir
+                            window.location.href = '@Url.Action("OturumSil", "Home")?Id=' + id;
+                        }
+                    });
+                }
+
+    </script>
+
+}

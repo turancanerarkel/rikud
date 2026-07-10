@@ -1,0 +1,147 @@
+﻿@{
+    Layout = "_Layout";
+}
+
+@{
+    var duyuruListesi = (List<Announcements>)ViewBag.DuyuruList;
+}
+
+<div class="row">
+    <div class="col-xl-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row">
+                    <div class="col-md-10"><h4 class="card-title mb-0">Duyurular</h4></div>
+                    
+                        <div class="col-md-2">
+                            <a type="button" class="btn btn-success waves-effect waves-light" asp-action="DuyuruEkle" asp-controller="Home">Yeni Duyuru Ekle</a>
+                        </div>
+                </div>
+                <div class="col-md-2">
+                </div>
+            </div><!-- end card header -->
+            <div class="card-body">
+                <div id="table-gridjs"></div>
+            </div>
+
+            <div class="row col-12 mb-5">
+                <div class="col-10">
+                </div>
+                <div class="col-2">
+                    <button onclick="SırayiKaydet()" class="btn btn-primary waves-effect waves-light">Sırayı Kaydet</button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+</div>
+
+
+@section scripts {
+    <script>
+            $(document).ready(function() {
+
+                    LoadUserGrid(0);
+                    $('.gridjs-search-input').attr("placeholder", "Ara...")
+                });
+
+                function LoadUserGrid() {
+
+                    new gridjs.Grid(
+                        {
+                            language: {
+                                pagination: {
+                                    previous: 'Geri',
+                                    next: 'Ileri',
+                                    showing: '\n',
+                                    to: 'ile',
+                                    of: 'arası',
+                                    results: 'Sonuc(lar)',
+                                }
+                            },
+                            columns: [{ name: "", sort: { enabled: !1 }, formatter: function(e) { return gridjs.html('<i class="bx bx-info-circle"></i>') } }
+                                , "Duyurular"
+                                , { name: "Sıra", width: "120px" }
+                                , "#"
+                            ]
+                            , pagination: { limit: 10 }, sort: !0, search: !0,
+                            server: {
+                                url: '/Home/_DuyuruList',
+                                then: data => data.map(item => [
+                                gridjs.html('<i class="bx bx-info-circle"></i>'),                        // 1. kolon (ikon)
+                                item.duyuruText,                                                       // 3. kolon
+                                gridjs.html(`<input type="number" class="form-control" id="txt_` + item.id + `" value="` + item.sortedBy + `" />`),                                              // 4. kolon,
+                                gridjs.html(
+                                `<a href='@Url.Action("DuyuruDuzenle", "Home")?Id=${item.id}' class='btn btn-warning waves-effect waves-light'>Güncelle</a>
+        <button type='button'
+                class='btn btn-primary waves-effect waves-light ms-2'
+                onclick='confirmDelete(${item.id})'>
+            Sil
+        </button>`
+                                )                                                                // 6. kolon (aksiyonlar)
+                            ]),
+                                total: data => data.count
+                            }
+                        }).render(document.getElementById("table-gridjs"));
+
+                }
+
+                        function confirmDelete(id, rolId) {
+
+                    // Normal kullanıcılar için onay sor
+                    Swal.fire({
+                        title: 'Emin misiniz?',
+                        text: 'Bu duyuruyu silmek istediğinizden emin misiniz?',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonColor: '#d33',
+                        cancelButtonColor: '#6c757d',
+                        confirmButtonText: 'Evet, sil',
+                        cancelButtonText: 'Vazgeç'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            // Silme isteğini yönlendir
+                            window.location.href = '@Url.Action("DuyuruSil", "Home")?Id=' + id;
+                        }
+                    });
+                }
+
+                function SırayiKaydet() {
+
+            duyuruList = [];
+            var duyuruList2 = @Html.Raw(Json.Serialize(duyuruListesi));
+            for (var i = 0; i < duyuruList2.length; i++) {
+                duyuruList.push(Gen_DuyuruItem(duyuruList2[i].id, document.getElementById("txt_" + duyuruList2[i].id).value));
+            }
+
+
+            $.ajax({
+                url: "@Url.Action("DuyuruSırayiKaydet")",
+                type: "POST",
+                contentType: 'application/json charset=utf-8',
+                data: JSON.stringify({
+                    duyuruList: duyuruList
+                }),
+                success: function (res) {
+                    if (res != "") {
+                        Swal.fire({ title: "Bilgi", text: res, icon: "warning", confirmButtonColor: "#3980c0" })
+                    }
+                    else {
+                        window.location.reload();
+
+                    }
+                }
+            });
+        }
+
+        function Gen_DuyuruItem(id, value) {
+            return {
+                Id: id
+                , SortedBy: value
+            };
+        }
+
+    </script>
+
+}

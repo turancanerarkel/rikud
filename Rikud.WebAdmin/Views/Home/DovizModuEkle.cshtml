@@ -1,0 +1,152 @@
+﻿@model ExcModValVm
+
+@{
+    ViewData["Title"] = "Döviz Modu Ekle";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var modlar = ViewBag.Modlar as List<Rikud.DLL.Models.Modes>;
+}
+
+<div class="row justify-content-center mt-4">
+    <div class="col-xl-8 col-lg-10">
+        <div class="card shadow-lg border-0 rounded-4">
+            <div class="card-header bg-primary text-white rounded-top-4">
+                <h4 class="mb-0"><i class="bi bi-currency-exchange me-2"></i>Döviz Modu Ekle</h4>
+            </div>
+            <div class="card-body p-4">
+                <form asp-action="DovizModuEkle" method="post">
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                    @Html.AntiForgeryToken()
+                    <div class="mb-3">
+                        <label asp-for="ModId" class="form-label fw-bold">Mod Seçin</label>
+                        <select asp-for="ModId" class="form-select">
+                            <option disabled readonly value="">-- Mod Seçin --</option>
+                            @foreach (var mod in modlar)
+                            {
+                                <option value="@mod.Id">@mod.ModeName</option>
+                            }
+                        </select>
+                        <span asp-validation-for="ModId" class="text-danger"></span>
+                    </div>
+
+                    <!-- GRAM ALTIN -->
+                    <h5 class="mt-4 mb-3 text-primary border-bottom pb-2">Gram Altın</h5>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="GramAltinAlis" class="form-label">Alış</label>
+                            <input asp-for="GramAltinAlis" type="text" inputmode="decimal" step="0.0001" class="form-control decimal-input" placeholder="2,850" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="GramAltinSatis" class="form-label">Satış</label>
+                            <input asp-for="GramAltinSatis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                    </div>
+
+                    <!-- 22 AYAR BİLEZİK -->
+                    <h5 class="mt-4 mb-3 text-primary border-bottom pb-2">22 Ayar Bilezik</h5>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="YirmiIkiAyarAlis" class="form-label">Alış</label>
+                            <input asp-for="YirmiIkiAyarAlis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="YirmiIkiAyarSatis" class="form-label">Satış</label>
+                            <input asp-for="YirmiIkiAyarSatis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                    </div>
+
+                    <!-- ATA ALTINLAR -->
+                    <h5 class="mt-4 mb-3 text-primary border-bottom pb-2">Ata Altınlar</h5>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="AtaCeyrekAlis" class="form-label">Ata Çeyrek Alış</label>
+                            <input asp-for="AtaCeyrekAlis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="AtaCeyrekSatis" class="form-label">Ata Çeyrek Satış</label>
+                            <input asp-for="AtaCeyrekSatis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="AtaYarimAlis" class="form-label">Ata Yarım Alış</label>
+                            <input asp-for="AtaYarimAlis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="AtaYarimSatis" class="form-label">Ata Yarım Satış</label>
+                            <input asp-for="AtaYarimSatis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="AtaLiraAlis" class="form-label">Ata Lira Alış</label>
+                            <input asp-for="AtaLiraAlis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="AtaLiraSatis" class="form-label">Ata Lira Satış</label>
+                            <input asp-for="AtaLiraSatis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                    </div>
+
+                    <!-- ZİYNET ALTINLAR -->
+                    <h5 class="mt-4 mb-3 text-primary border-bottom pb-2">Ziynet Altınlar</h5>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label asp-for="ZiynetCeyrekAlis" class="form-label">Ziynet Çeyrek Alış</label>
+                            <input asp-for="ZiynetCeyrekAlis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="ZiynetCeyrekSatis" class="form-label">Ziynet Çeyrek Satış</label>
+                            <input asp-for="ZiynetCeyrekSatis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="ZiynetYarimAlis" class="form-label">Ziynet Yarım Alış</label>
+                            <input asp-for="ZiynetYarimAlis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="ZiynetYarimSatis" class="form-label">Ziynet Yarım Satış</label>
+                            <input asp-for="ZiynetYarimSatis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="ZiynetLiraAlis" class="form-label">Ziynet Lira Alış</label>
+                            <input asp-for="ZiynetLiraAlis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="ZiynetLiraSatis" class="form-label">Ziynet Lira Satış</label>
+                            <input asp-for="ZiynetLiraSatis" type="text" placeholder="2,850" inputmode="decimal" class="form-control decimal-input" />
+                        </div>
+                    </div>
+
+                    <!-- Mod -->
+                    <h5 class="mt-4 mb-3 text-primary border-bottom pb-2">Seçili Mod</h5>
+                    <div class="form-check mt-2">
+                        <input asp-for="SelectedMod" type="checkbox" class="form-check-input" id="SelectedMod" />
+                        <label asp-for="SelectedMod" class="form-check-label ms-1">Bu Modu Uygula</label>
+                    </div>
+
+                    <div class="mt-4 text-end">
+                        <button type="submit" class="btn btn-success px-4">
+                            <i class="bi bi-check2-circle me-1"></i>Kaydet
+                        </button>
+                        <a asp-action="DovizModlari" class="btn btn-secondary ms-2 px-4">Geri Dön</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+
+    <script>
+        document.querySelectorAll(".decimal-input").forEach(el => {
+            el.addEventListener("input", e => {
+                // sadece rakam, virgül, nokta izin ver
+                e.target.value = e.target.value.replace(/[^0-9,\.]/g, "");
+            });
+
+            el.form?.addEventListener("submit", () => {
+                // form gönderilmeden önce virgülü noktaya çevir
+                document.querySelectorAll(".decimal-input").forEach(inp => {
+                    inp.value = inp.value.replace(",", ".");
+                });
+            });
+        });
+    </script>
+}

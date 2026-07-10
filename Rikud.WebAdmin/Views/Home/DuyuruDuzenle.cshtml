@@ -1,0 +1,53 @@
+﻿@model Rikud.DLL.Models.Announcements
+
+@{
+    ViewData["Title"] = "Duyuru Düzenle";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="row justify-content-center mt-4">
+    <div class="col-md-6">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Duyuru Düzenle</h5>
+            </div>
+
+            <div class="card-body">
+                <form asp-action="DuyuruDuzenle" method="post">
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                    @Html.AntiForgeryToken()
+                    <!-- ID alanı gizli -->
+                    <input asp-for="Id" type="hidden" />
+
+                    <div class="form-group mb-3">
+                        <label asp-for="DuyuruText" class="form-label fw-semibold"></label>
+                        <textarea asp-for="DuyuruText" class="form-control" rows="4"></textarea>
+                        <span asp-validation-for="DuyuruText" class="text-danger"></span>
+                    </div>
+
+                    <div class="form-group mb-3" style="display:none">
+                        <label asp-for="SortedBy" class="form-label fw-semibold"></label>
+                        <div class="form-control-plaintext border bg-light px-3 py-2 rounded">
+                            @Model.SortedBy
+                        </div>
+                        <!-- SortedBy değeri değişmesin ama postta kaybolmasın diye gizli input -->
+                        <input type="hidden" asp-for="SortedBy" />
+                    </div>
+
+                    <div class="d-flex justify-content-between mt-3">
+                        <a asp-action="Duyurular" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left"></i> Listeye Dön
+                        </a>
+                        <button type="submit" class="btn btn-success">
+                            <i class="bi bi-save"></i> Kaydet
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

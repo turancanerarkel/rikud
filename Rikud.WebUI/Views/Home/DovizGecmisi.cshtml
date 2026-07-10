@@ -1,0 +1,215 @@
+﻿@{
+    Layout = "_LayoutHistory";
+}
+
+<div class="row">
+    <div class="col-xl-12">
+        <div class="card">
+            <div class="card-header">
+                <div class="row">
+                    <div class="col-md-10"><h4 class="card-title mb-0">Döviz Geçmişi</h4></div>
+                </div>
+                <div class="col-md-2">
+                </div>
+            </div><!-- end card header -->
+            <div class="card-body">
+
+                <div class="mb-3 row">
+                    <label for="example-text-input" class="col-md-2 col-form-label">Başlangıç Tarihi</label>
+                    <div class="col-md-2">
+                        <input type="text" class="form-control" id="StartDate" name="StartDate" value="@ViewBag.StartDate">
+                    </div>
+                    <div class="col-md-1">
+                        <input type="text" class="form-control" id="firsthour" name="firsthour">
+                    </div>
+                    <div class="col-md-1">
+                        <input type="text" class="form-control" id="lasthour" name="lasthour">
+                    </div>
+                </div>
+
+                <div class="mb-3 row">
+                    <div class="col-md-2">
+                        <button class="btn btn-primary" onclick="ListeyiGetir()">Listeyi Getir</button>
+                    </div>
+                </div>
+
+                <div id="table-gridjs"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+
+@section scripts {
+    <script>
+                 let myGrid;
+        $(document).ready(function() {
+
+                       // Şu anki zamanı al
+           const now = new Date();
+
+           // Dakikayı sıfırla (tam saat)
+           now.setMinutes(0, 0, 0);
+
+           // 1 saat sonrasını oluştur
+           const oneHourLater = new Date(now);
+           oneHourLater.setHours(now.getHours() + 1);
+
+           // Şu anki saat formatlı olarak
+           const formatTime = d => d.toTimeString().slice(0, 5); // "HH:mm"
+
+                   flatpickr("#StartDate", { dateFormat: "d.m.Y" })
+                           flatpickr("#firsthour", {
+                     enableTime: true,      // saat seçimini aktif eder
+                     noCalendar: true,      // takvimi gizler, sadece saat seçilir
+                     dateFormat: "H:i",     // 24 saat formatı (ör. 08:00, 14:45)
+                     time_24hr: true ,
+                            minuteIncrement: 60,  // sadece 00 dakikalı saatler
+                   defaultMinute: 0,// 24 saatlik görünüm
+                    defaultDate: formatTime(now) // örn. 14:00
+                   });
+
+                    flatpickr("#lasthour", {
+                     enableTime: true,      // saat seçimini aktif eder
+                     noCalendar: true,      // takvimi gizler, sadece saat seçilir
+                     dateFormat: "H:i",     // 24 saat formatı (ör. 08:00, 14:45)
+                     time_24hr: true ,
+                            minuteIncrement: 60,  // sadece 00 dakikalı saatler
+                   defaultMinute: 0, // 24 saatlik görünüm
+                   defaultDate: formatTime(oneHourLater) // örn. 15:00
+                   });
+                           LoadUserGrid("@ViewBag.StartDate", formatTime(now), formatTime(oneHourLater));
+                           $('.gridjs-search-input').attr("placeholder", "Ara...")
+                       });
+
+                   function LoadUserGrid(sDate, fHour, lHour) {
+
+                              const fHourInt = parseInt(fHour.split(":")[0], 10); // "14:00" -> 14
+           const lHourInt = parseInt(lHour.split(":")[0], 10); // "15:00" -> 15
+
+                           const mygrid = new gridjs.Grid(
+                      {
+                          language: {
+                              pagination: {
+                                  previous: 'Geri',
+                                  next: 'İleri',
+                                  showing: '\n',
+                                  to: 'ile',
+                                  of: 'arası',
+                                  results: 'Sonuç Gösteriliyor',
+                              }
+                          },
+                          columns: [{ name: "", sort: { enabled: !1 }, formatter: function (e) { return gridjs.html('<i class="bx bx-money"></i>') } }
+                                      ,"Tarih"
+                          , "Gram Alis"
+                                         , "Gram Satis"
+                                         , "Gram Satis EFT"
+                                      , "A. Ceyrek Alis"
+                                         , "A. Ceyrek Satis"
+                                         , "A. Ceyrek Satis EFT"
+                                      , "A. Yarim Alis"
+                                         , "A. Yarim Satis"
+                                         , "A. Yarim Satis EFT"
+                                      , "A. Lira Alis"
+                                         , "A. Lira Satis"
+                                         , "A. Lira Satis EFT"
+                                      , "22 Ayar Alis"
+                                         , "22 Ayar Satis"
+                                         , "22 Ayar Satis EFT"
+                                      , "Z.Ceyrek Alis"
+                                         , "Z.Ceyrek Satis"
+                                         , "Z.Ceyrek Satis EFT"
+                                      , "Z.Yarim Alis"
+                                         , "Z.Yarim Satis"
+                                         , "Z.Yarim Satis EFT"
+                                      , "Z.Lira Alis"
+                                      , "Z.Lira Satis"
+                                      , "Z.Lira Satis EFT"
+                          ]
+                          , pagination: { limit: 10 }, sort: !0, search: !0,
+                          server: {
+                                                      url: '/Home/_ExchangeHistory?date=' + sDate + '&fromHour=' + fHourInt + '&toHour=' + lHourInt,
+                                 then: data => data.items.map(item => [
+                                       '',
+                                       item.createdDateText,
+                                       item.gramAltinAlis,
+                                         item.gramAltinSatis,
+                                         item.gramAltinSatisEFT,
+                                      item.ataCeyrekAlis,
+                                         item.ataCeyrekSatis,
+                                         item.ataCeyrekSatisEFT,
+                                      item.ataYarimAlis,
+                                         item.ataYarimSatis,
+                                         item.ataYarimSatisEFT,
+                                      item.ataLiraAlis,
+                                         item.ataLiraSatis,
+                                         item.ataLiraSatisEFT,
+                                      item.yirmiIkiAyarAlis,
+                                         item.yirmiIkiAyarSatis,
+                                         item.yirmiIkiAyarSatisEFT,
+                                      item.ziynetCeyrekAlis,
+                                         item.ziynetCeyrekSatis,
+                                         item.ziynetCeyrekSatisEFT,
+                                      item.ziynetYarimAlis,
+                                         item.ziynetYarimSatis,
+                                         item.ziynetYarimSatisEFT,
+                                      item.ziynetLiraAlis,
+                                         item.ziynetLiraSatis,
+                                            item.ziynetLiraSatisEFT
+                              ]),
+                                 total: data => data.items.count
+                          }
+                      }).render(document.getElementById("table-gridjs"));
+
+                  mygrid.updateConfig(
+                      {
+                          server: {
+                                       url: '/Home/_ExchangeHistory?date=' + sDate + '&fromHour=' + fHourInt + '&toHour=' + lHourInt,
+                              then: data => data.items.map(item => [
+                                  '',
+                                  item.createdDateText,
+                                       item.gramAltinAlis,
+                                            item.gramAltinSatis,
+                                               item.gramAltinSatisEFT,
+                                         item.ataCeyrekAlis,
+                                            item.ataCeyrekSatis,
+                                            item.ataCeyrekSatisEFT,
+                                         item.ataYarimAlis,
+                                            item.ataYarimSatis,
+                                            item.ataYarimSatisEFT,
+                                         item.ataLiraAlis,
+                                            item.ataLiraSatis,
+                                            item.ataLiraSatisEFT,
+                                         item.yirmiIkiAyarAlis,
+                                            item.yirmiIkiAyarSatis,
+                                            item.yirmiIkiAyarSatisEFT,
+                                         item.ziynetCeyrekAlis,
+                                            item.ziynetCeyrekSatis,
+                                            item.ziynetCeyrekSatisEFT,
+                                         item.ziynetYarimAlis,
+                                            item.ziynetYarimSatis,
+                                            item.ziynetYarimSatisEFT,
+                                         item.ziynetLiraAlis,
+                                            item.ziynetLiraSatis,
+                                               item.ziynetLiraSatisEFT
+                              ]),
+                                 total: data => data.items.count
+                          }
+                      }).forceRender();
+
+                  $('.gridjs-search-input').attr("placeholder", "Ara...")
+                  document.getElementsByClassName("gridjs-search")[0].style.float = 'right';
+
+                   }
+
+                          function ListeyiGetir() {
+                  $('#table-gridjs').html('');
+
+                           LoadUserGrid(document.getElementById("StartDate").value, document.getElementById("firsthour").value, document.getElementById("lasthour").value);
+                  myGrid.update();
+              }
+
+    </script>
+
+}

@@ -1,0 +1,58 @@
+﻿@model Rikud.DLL.Models.Parameters
+
+@{
+    ViewData["Title"] = "Parametre Düzenle";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="card shadow-sm mt-4">
+    <div class="card-header bg-primary text-white">
+        <h5 class="mb-0"><i class="fas fa-sliders-h me-2"></i>Parametre Düzenleme</h5>
+    </div>
+
+    <div class="card-body ">
+        <form asp-action="Parameterler" method="post" novalidate>
+            <div asp-validation-summary="ModelOnly" class="alert alert-danger" role="alert"></div>
+
+            <div class="mb-3">
+                <input asp-for="Id" class="form-control" readonly style="display:none" type="hidden" />
+                <span asp-validation-for="Id" class="text-danger small"></span>
+            </div>
+
+            <div class="mb-3 col-12 col-xl-6">
+                <label asp-for="ParameterName" class="form-label">Parametre Adı</label>
+                <input asp-for="ParameterName" class="form-control bg-light" readonly />
+                <small class="text-muted">Bu alan sistem tarafından yönetilir, değiştirilemez.</small>
+                <span asp-validation-for="ParameterName" class="text-danger small"></span>
+            </div>
+
+            <div class="mb-3 col-12 col-xl-6">
+                <label asp-for="ParameterValue" class="form-label">Parametre Değeri</label>
+                <select asp-for="ParameterValue" class="form-select">
+                    <option value="1" selected="@(Model.ParameterValue == "1")">Datshop</option>
+                    <option value="2" selected="@(Model.ParameterValue == "2")">Harem Altın</option>
+                </select>
+                <span asp-validation-for="ParameterValue" class="text-danger small"></span>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center mt-4 col-12 col-xl-7 row">
+                <div class="col-6 col-xl-3">
+                    <a asp-action="Index" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Geri Dön
+                    </a>
+                </div>
+                <div class="col-6 col-xl-3">
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-save"></i> Kaydet
+                    </button>
+                </div>
+
+
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

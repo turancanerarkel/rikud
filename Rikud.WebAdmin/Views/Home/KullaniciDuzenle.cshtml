@@ -1,0 +1,72 @@
+﻿@model Rikud.DLL.Models.Users
+
+@{
+    ViewData["Title"] = "KullaniciDuzenle";
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+
+<div class="row">
+    <div class="col-xl-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="card-title mb-0">Kullanıcı Düzenle</h4>
+                <a asp-action="Kullanicilar" class="btn btn-sm btn-outline-secondary">Listeye Dön</a>
+            </div>
+            <div class="card-body">
+                <h5 class="mb-3">@Model.Username</h5>
+
+                <form asp-action="KullaniciDuzenle" method="post">
+                    @Html.AntiForgeryToken()
+
+                    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+                    <input asp-for="Id" type="hidden" />
+
+                    <div class="mb-3 col-5">
+                        <label asp-for="Username" class="form-label">Kullanıcı Adı</label>
+                        <input asp-for="Username" class="form-control" />
+                        <span asp-validation-for="Username" class="text-danger"></span>
+                    </div>
+
+                    <div class="mb-3 col-5">
+                        <label asp-for="RolId" class="form-label">Rolü</label>
+                        <select asp-for="RolId" class="form-select"
+                                asp-items="@(new SelectList(ViewBag.Roller, "Id", "RolAdi", Model.RolId))">
+                            <option disabled value="">-- Rol Seçin --</option>
+                        </select>
+                        <span asp-validation-for="RolId" class="text-danger"></span>
+                    </div>
+
+                    <div class="mb-3 col-5">
+                        <label asp-for="SessionCount" class="form-label">Oturum Sayısı</label>
+                        <input asp-for="SessionCount" type="number" class="form-control" />
+                        <span asp-validation-for="SessionCount" class="text-danger"></span>
+                    </div>
+
+                    <div class="form-check mb-3 col-5">
+                        <input class="form-check-input" asp-for="Active" />
+                        <label class="form-check-label" for="Active">
+                            @Html.DisplayNameFor(model => model.Active)
+                        </label>
+                    </div>
+
+                    <div class="mb-3 col-5">
+                        <label asp-for="Password" class="form-label">Şifre</label>
+                        <input asp-for="Password" class="form-control" />
+                        <span asp-validation-for="Password" class="text-danger"></span>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label asp-for="CompanyName" class="form-label">Firma Adı</label>
+                        <input asp-for="CompanyName" type="text" class="form-control" />
+                        <span asp-validation-for="CompanyName" class="text-danger"></span>
+                    </div>
+
+                    <div class="d-flex justify-content-end">
+                        <button type="submit" class="btn btn-primary">Kaydet</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
