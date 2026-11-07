@@ -685,43 +685,114 @@ namespace Rikud.WebAdmin.Controllers
             var start = new DateTime(day.Year, day.Month, day.Day, fromHour, 0, 0, DateTimeKind.Local);
             var end = new DateTime(day.Year, day.Month, day.Day, toHour, 0, 0, DateTimeKind.Local);
 
-            // Sorgu: ExchangeHistroies (aralığa düşenler)
-            var q = _db.ExchangeHistroies
-                .AsNoTracking()
-                .Where(x => x.CreatedDate >= start && x.CreatedDate < end)
-                .OrderBy(x => x.CreatedDate);
+            // Canlı: son 7 gün (DovizGecmisi). Eski: DovizGecmisi_arc.
+            const int retentionDays = 7;
+            var cutoff = DateTime.Now.AddDays(-retentionDays);
 
-            var items = await q
+            var rows = new List<(
+                decimal gramAltinAlis, decimal gramAltinSatis, decimal gramAltinSatisEFT,
+                decimal ataCeyrekAlis, decimal ataCeyrekSatis, decimal ataCeyrekSatisEFT,
+                decimal ataYarimAlis, decimal ataYarimSatis, decimal ataYarimSatisEFT,
+                decimal ataLiraAlis, decimal ataLiraSatis, decimal ataLiraSatisEFT,
+                decimal yirmiIkiAyarAlis, decimal yirmiIkiAyarSatis, decimal yirmiIkiAyarSatisEFT,
+                decimal ziynetCeyrekAlis, decimal ziynetCeyrekSatis, decimal ziynetCeyrekSatisEFT,
+                decimal ziynetYarimAlis, decimal ziynetYarimSatis, decimal ziynetYarimSatisEFT,
+                decimal ziynetLiraAlis, decimal ziynetLiraSatis, decimal ziynetLiraSatisEFT,
+                DateTime createdDate)>();
+
+            if (end > cutoff)
+            {
+                var live = await _db.ExchangeHistroies
+                    .AsNoTracking()
+                    .Where(x => x.CreatedDate >= start && x.CreatedDate < end)
+                    .Select(x => new
+                    {
+                        x.GramAltinAlis, x.GramAltinSatis, x.GramAltinSatisEFT,
+                        x.AtaCeyrekAlis, x.AtaCeyrekSatis, x.AtaCeyrekSatisEFT,
+                        x.AtaYarimAlis, x.AtaYarimSatis, x.AtaYarimSatisEFT,
+                        x.AtaLiraAlis, x.AtaLiraSatis, x.AtaLiraSatisEFT,
+                        x.YirmiIkiAyarAlis, x.YirmiIkiAyarSatis, x.YirmiIkiAyarSatisEFT,
+                        x.ZiynetCeyrekAlis, x.ZiynetCeyrekSatis, x.ZiynetCeyrekSatisEFT,
+                        x.ZiynetYarimAlis, x.ZiynetYarimSatis, x.ZiynetYarimSatisEFT,
+                        x.ZiynetLiraAlis, x.ZiynetLiraSatis, x.ZiynetLiraSatisEFT,
+                        x.CreatedDate
+                    })
+                    .ToListAsync();
+
+                rows.AddRange(live.Select(x => (
+                    x.GramAltinAlis, x.GramAltinSatis, x.GramAltinSatisEFT,
+                    x.AtaCeyrekAlis, x.AtaCeyrekSatis, x.AtaCeyrekSatisEFT,
+                    x.AtaYarimAlis, x.AtaYarimSatis, x.AtaYarimSatisEFT,
+                    x.AtaLiraAlis, x.AtaLiraSatis, x.AtaLiraSatisEFT,
+                    x.YirmiIkiAyarAlis, x.YirmiIkiAyarSatis, x.YirmiIkiAyarSatisEFT,
+                    x.ZiynetCeyrekAlis, x.ZiynetCeyrekSatis, x.ZiynetCeyrekSatisEFT,
+                    x.ZiynetYarimAlis, x.ZiynetYarimSatis, x.ZiynetYarimSatisEFT,
+                    x.ZiynetLiraAlis, x.ZiynetLiraSatis, x.ZiynetLiraSatisEFT,
+                    x.CreatedDate)));
+            }
+
+            if (start < cutoff)
+            {
+                var arc = await _db.ExchangeHistroiesArc
+                    .AsNoTracking()
+                    .Where(x => x.CreatedDate >= start && x.CreatedDate < end)
+                    .Select(x => new
+                    {
+                        x.GramAltinAlis, x.GramAltinSatis, x.GramAltinSatisEFT,
+                        x.AtaCeyrekAlis, x.AtaCeyrekSatis, x.AtaCeyrekSatisEFT,
+                        x.AtaYarimAlis, x.AtaYarimSatis, x.AtaYarimSatisEFT,
+                        x.AtaLiraAlis, x.AtaLiraSatis, x.AtaLiraSatisEFT,
+                        x.YirmiIkiAyarAlis, x.YirmiIkiAyarSatis, x.YirmiIkiAyarSatisEFT,
+                        x.ZiynetCeyrekAlis, x.ZiynetCeyrekSatis, x.ZiynetCeyrekSatisEFT,
+                        x.ZiynetYarimAlis, x.ZiynetYarimSatis, x.ZiynetYarimSatisEFT,
+                        x.ZiynetLiraAlis, x.ZiynetLiraSatis, x.ZiynetLiraSatisEFT,
+                        x.CreatedDate
+                    })
+                    .ToListAsync();
+
+                rows.AddRange(arc.Select(x => (
+                    x.GramAltinAlis, x.GramAltinSatis, x.GramAltinSatisEFT,
+                    x.AtaCeyrekAlis, x.AtaCeyrekSatis, x.AtaCeyrekSatisEFT,
+                    x.AtaYarimAlis, x.AtaYarimSatis, x.AtaYarimSatisEFT,
+                    x.AtaLiraAlis, x.AtaLiraSatis, x.AtaLiraSatisEFT,
+                    x.YirmiIkiAyarAlis, x.YirmiIkiAyarSatis, x.YirmiIkiAyarSatisEFT,
+                    x.ZiynetCeyrekAlis, x.ZiynetCeyrekSatis, x.ZiynetCeyrekSatisEFT,
+                    x.ZiynetYarimAlis, x.ZiynetYarimSatis, x.ZiynetYarimSatisEFT,
+                    x.ZiynetLiraAlis, x.ZiynetLiraSatis, x.ZiynetLiraSatisEFT,
+                    x.CreatedDate)));
+            }
+
+            var items = rows
+                .OrderBy(x => x.createdDate)
                 .Select(x => new
                 {
-                    // Grid’de kullandıklarımız:
-                    gramAltinAlis = x.GramAltinAlis,
-                    gramAltinSatis = x.GramAltinSatis,
-                    gramAltinSatisEFT = x.GramAltinSatisEFT,
-                    ataCeyrekAlis = x.AtaCeyrekAlis,
-                    ataCeyrekSatis = x.AtaCeyrekSatis,
-                    ataCeyrekSatisEFT = x.AtaCeyrekSatisEFT,
-                    ataYarimAlis = x.AtaYarimAlis,
-                    ataYarimSatis = x.AtaYarimSatis,
-                    ataYarimSatisEFT = x.AtaYarimSatisEFT,
-                    ataLiraAlis = x.AtaLiraAlis,
-                    ataLiraSatis = x.AtaLiraSatis,
-                    ataLiraSatisEFT = x.AtaLiraSatisEFT,
-                    yirmiIkiAyarAlis = x.YirmiIkiAyarAlis,
-                    yirmiIkiAyarSatis = x.YirmiIkiAyarSatis,
-                    yirmiIkiAyarSatisEFT = x.YirmiIkiAyarSatisEFT,
-                    ziynetCeyrekAlis = x.ZiynetCeyrekAlis,
-                    ziynetCeyrekSatis = x.ZiynetCeyrekSatis,
-                    ziynetCeyrekSatisEFT = x.ZiynetCeyrekSatisEFT,
-                    ziynetYarimAlis = x.ZiynetYarimAlis,
-                    ziynetYarimSatis = x.ZiynetYarimSatis,
-                    ziynetYarimSatisEFT = x.ZiynetYarimSatisEFT,
-                    ziynetLiraAlis = x.ZiynetLiraAlis,
-                    ziynetLiraSatis = x.ZiynetLiraSatis,
-                    ziynetLiraSatisEFT = x.ZiynetLiraSatisEFT,
-                    createdDateText = x.CreatedDate.ToString("dd.MM.yyyy HH:mm")
+                    gramAltinAlis = x.gramAltinAlis,
+                    gramAltinSatis = x.gramAltinSatis,
+                    gramAltinSatisEFT = x.gramAltinSatisEFT,
+                    ataCeyrekAlis = x.ataCeyrekAlis,
+                    ataCeyrekSatis = x.ataCeyrekSatis,
+                    ataCeyrekSatisEFT = x.ataCeyrekSatisEFT,
+                    ataYarimAlis = x.ataYarimAlis,
+                    ataYarimSatis = x.ataYarimSatis,
+                    ataYarimSatisEFT = x.ataYarimSatisEFT,
+                    ataLiraAlis = x.ataLiraAlis,
+                    ataLiraSatis = x.ataLiraSatis,
+                    ataLiraSatisEFT = x.ataLiraSatisEFT,
+                    yirmiIkiAyarAlis = x.yirmiIkiAyarAlis,
+                    yirmiIkiAyarSatis = x.yirmiIkiAyarSatis,
+                    yirmiIkiAyarSatisEFT = x.yirmiIkiAyarSatisEFT,
+                    ziynetCeyrekAlis = x.ziynetCeyrekAlis,
+                    ziynetCeyrekSatis = x.ziynetCeyrekSatis,
+                    ziynetCeyrekSatisEFT = x.ziynetCeyrekSatisEFT,
+                    ziynetYarimAlis = x.ziynetYarimAlis,
+                    ziynetYarimSatis = x.ziynetYarimSatis,
+                    ziynetYarimSatisEFT = x.ziynetYarimSatisEFT,
+                    ziynetLiraAlis = x.ziynetLiraAlis,
+                    ziynetLiraSatis = x.ziynetLiraSatis,
+                    ziynetLiraSatisEFT = x.ziynetLiraSatisEFT,
+                    createdDateText = x.createdDate.ToString("dd.MM.yyyy HH:mm")
                 })
-                .ToListAsync();
+                .ToList();
 
             return Json(new
             {

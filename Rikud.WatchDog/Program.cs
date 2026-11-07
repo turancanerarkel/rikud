@@ -17,6 +17,12 @@ namespace RikudWatchdog
         // Reset sonrası hemen tekrar reset atmamak için bekleme süresi (Cooldown)
         private static DateTime _lastRestartTime = DateTime.MinValue;
 
+        // Arşiv: günde 1 kez (03:00 civarı), arka planda
+        private static DateTime _lastArchiveDate = DateTime.MinValue;
+        private static int _archiveRunning = 0;
+        private const int ARCHIVE_HOUR = 3;
+        private const int ARCHIVE_RETENTION_DAYS = 7;
+
         static async Task Main(string[] args)
         {
             Console.WriteLine($"[{DateTime.Now}] Watchdog başlatıldı...");
@@ -28,6 +34,7 @@ namespace RikudWatchdog
             {
                 try
                 {
+                    TryKickDailyArchive();
                     await CheckSystemStatus();
                 }
                 catch (Exception ex)
@@ -59,8 +66,8 @@ namespace RikudWatchdog
                 return;
             }
             var opt = new DbContextOptionsBuilder<RikudDbContext>()
-    .UseSqlServer("Data Source=localhost;Persist Security Info=True;initial catalog=RIKUDDB;User ID=user_rikud;Password=wr1He7r_ph5trl@tIk;Pooling=True;Min Pool Size=1;Max Pool Size=10;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;",
-         b => b.CommandTimeout(60))
+    .UseSqlServer("Data Source=localhost;Persist Security Info=True;initial catalog=RIKUDDB;User ID=user_rikud;Password=wr1He7r_ph5trl@tIk;Pooling=True;Min Pool Size=1;Max Pool Size=10;MultipleActiveResultSets=False;Connect Timeout=15;Encrypt=True;TrustServerCertificate=True;",
+         b => b.CommandTimeout(30))
     .Options;
 
             // 2. KONTROL: Process çalışıyor ama veri yazıyor mu? (Stale Data Check)
@@ -97,8 +104,14 @@ namespace RikudWatchdog
 
         private static bool IsProcessRunning(string processName)
         {
-            var processes = Process.GetProcessesByName(processName);
-            return processes.Length > 0;
+            try
+            {
+                return Process.GetProcessesByName(processName).Length > 0;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static void RestartTask()
@@ -110,7 +123,7 @@ namespace RikudWatchdog
                 // 1. Task Scheduler Görevini Durdur
                 Console.WriteLine("1. Task durduruluyor...");
                 RunCmd($"schtasks /End /TN \"{TASK_NAME}\"");
-                Thread.Sleep(2000); // Biraz bekle
+                Thread.Sleep(2000);
 
                 // 2. Process hala açıksa zorla öldür (Kill)
                 var runningProcesses = Process.GetProcessesByName(PROCESS_NAME);
@@ -120,21 +133,71 @@ namespace RikudWatchdog
                     {
                         Console.WriteLine($"2. Process Kill ediliyor (PID: {proc.Id})...");
                         proc.Kill();
-                        proc.WaitForExit(3000);
+                        proc.WaitForExit(5000);
                     }
                     catch { /* Zaten kapanmış olabilir */ }
+                    finally
+                    {
+                        try { proc.Dispose(); } catch { }
+                    }
                 }
+
+                // Kill sonrası mutex'in OS tarafından bırakılması için kısa bekleme
+                Thread.Sleep(1500);
 
                 // 3. Task Scheduler Görevini Tekrar Başlat
                 Console.WriteLine("3. Task tekrar başlatılıyor...");
                 RunCmd($"schtasks /Run /TN \"{TASK_NAME}\"");
 
-                Console.WriteLine(">> Yeniden başlatma komutları gönderildi.");
+                // 4. Gerçekten ayağa kalktı mı? (abandoned mutex / SQL timeout crash'ini yakala)
+                Thread.Sleep(5000);
+                if (IsProcessRunning(PROCESS_NAME))
+                    Console.WriteLine($">> {PROCESS_NAME} ayakta (PID kontrol OK).");
+                else
+                    Console.WriteLine($">> UYARI: {PROCESS_NAME} 5 sn sonra hala yok! Manuel kontrol et (mutex/SQL).");
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Restart sırasında hata: {ex.Message}");
             }
+        }
+
+        private static void TryKickDailyArchive()
+        {
+            // Gece 03:00–03:59 arası, günde bir kez. İlk kurulumda SSMS'ten
+            // EXEC usp_Rikud_ArchiveOldData çalıştır; burası sonrası için.
+            if (DateTime.Now.Hour != ARCHIVE_HOUR) return;
+            if (_lastArchiveDate.Date == DateTime.Now.Date) return;
+            if (Interlocked.CompareExchange(ref _archiveRunning, 1, 0) != 0) return;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    Console.WriteLine($"[{DateTime.Now}] Arşiv başlıyor (retention={ARCHIVE_RETENTION_DAYS} gün)...");
+
+                    var opt = new DbContextOptionsBuilder<RikudDbContext>()
+                        .UseSqlServer("Data Source=localhost;Persist Security Info=True;initial catalog=RIKUDDB;User ID=user_rikud;Password=wr1He7r_ph5trl@tIk;Pooling=True;Min Pool Size=1;Max Pool Size=10;MultipleActiveResultSets=False;Connect Timeout=30;Encrypt=True;TrustServerCertificate=True;",
+                            b => b.CommandTimeout(0)) // arşiv uzun sürebilir
+                        .Options;
+
+                    await using var db = new RikudDbContext(opt);
+                    await db.Database.ExecuteSqlRawAsync(
+                        "EXEC dbo.usp_Rikud_ArchiveOldData @RetentionDays={0}, @BatchSize={1}",
+                        ARCHIVE_RETENTION_DAYS, 20000);
+
+                    _lastArchiveDate = DateTime.Now.Date;
+                    Console.WriteLine($"[{DateTime.Now}] Arşiv tamamlandı.");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[{DateTime.Now}] Arşiv HATA: {ex.Message}");
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _archiveRunning, 0);
+                }
+            });
         }
 
         private static void RunCmd(string arguments)

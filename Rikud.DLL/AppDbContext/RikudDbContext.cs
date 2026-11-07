@@ -14,6 +14,7 @@ namespace Rikud.DLL.AppDbContext
         public DbSet<ExchangeModeValues> ExchangeModeValues => Set<ExchangeModeValues>();
         public DbSet<Announcements> Announcements => Set<Announcements>();
         public DbSet<ExchangeHistroies> ExchangeHistroies => Set<ExchangeHistroies>();
+        public DbSet<ExchangeHistroiesArc> ExchangeHistroiesArc => Set<ExchangeHistroiesArc>();
 
         public RikudDbContext(DbContextOptions<RikudDbContext> options) : base(options) { }
 
@@ -69,10 +70,17 @@ namespace Rikud.DLL.AppDbContext
                 e.ToTable("DovizModDegerleri");
             });
 
-            // DovizGecmisi
+            // DovizGecmisi (canlı — son 7 gün)
             b.Entity<ExchangeHistroies>(e =>
             {
                 e.ToTable("DovizGecmisi");
+            });
+
+            // DovizGecmisi_arc (7 günden eski)
+            b.Entity<ExchangeHistroiesArc>(e =>
+            {
+                e.ToTable("DovizGecmisi_arc");
+                e.Property(p => p.Id).ValueGeneratedNever(); // arşivde Id canlıdan kopyalanır
             });
 
             // Duyurular

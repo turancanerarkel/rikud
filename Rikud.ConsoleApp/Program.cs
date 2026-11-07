@@ -14,14 +14,29 @@ public class Program
 {
     // Zaman sınırı: veri bekleme
     private const int SourceWaitSeconds = 5;     // veri bekleme
-    private const int LoopSeconds = 10;          // ana döngü aralığı
+    private const int LoopSeconds = 3;           // ana döngü aralığı (kuyumcu ekranı ~3 sn)
     private static readonly CancellationTokenSource _cts = new();
     private static readonly HttpClient _httpClient = new HttpClient();
     public static async Task<int> Main(string[] args)
     {
-        // Tek instance kilidi
+        // Tek instance kilidi.
+        // WatchDog process'i Kill() ile öldürürse mutex "abandoned" kalır;
+        // WaitOne o durumda AbandonedMutexException fırlatır. Bunu yakalamazsak
+        // uygulama anında çöker ve WatchDog sonsuz restart döngüsüne girer.
         using var mutex = new System.Threading.Mutex(false, @"Global\RikudDovizWriter");
-        if (!mutex.WaitOne(0))
+        bool hasMutex;
+        try
+        {
+            hasMutex = mutex.WaitOne(0);
+        }
+        catch (AbandonedMutexException)
+        {
+            // Önceki instance zorla öldürülmüş; bu instance kilidi devraldı.
+            Console.WriteLine("Önceki instance abandoned mutex bıraktı; kilidi devralındı.");
+            hasMutex = true;
+        }
+
+        if (!hasMutex)
         {
             Console.WriteLine("Zaten çalışıyor. Çıkılıyor.");
             return 0;
@@ -36,15 +51,16 @@ public class Program
         try
         {
             var opt = new DbContextOptionsBuilder<RikudDbContext>()
-                .UseSqlServer("Data Source=localhost;Persist Security Info=True;initial catalog=RIKUDDB;User ID=user_rikud;Password=wr1He7r_ph5trl@tIk;Pooling=True;Min Pool Size=1;Max Pool Size=20;MultipleActiveResultSets=False;Encrypt=True;TrustServerCertificate=True;",
-                     b => b.CommandTimeout(60))
+                .UseSqlServer("Data Source=localhost;Persist Security Info=True;initial catalog=RIKUDDB;User ID=user_rikud;Password=wr1He7r_ph5trl@tIk;Pooling=True;Min Pool Size=1;Max Pool Size=20;MultipleActiveResultSets=False;Connect Timeout=15;Encrypt=True;TrustServerCertificate=True;",
+                     b => b.CommandTimeout(30))
                 .Options;
 
             using var db = new RikudDbContext(opt);
 
-            // Parametreyi bellekte tut, her 60 sn'de bir yenile
+            // Parametreyi bellekte tut, her 30 sn'de bir yenile
             int altinTipId = await GetAltinTipIdAsync(db);
             var lastTypeRefresh = DateTime.UtcNow;
+            var lastHistoryWrite = DateTime.MinValue;
 
             Console.WriteLine($"Sürekli döngü başlıyor. AltinTipId={altinTipId}");
 
@@ -59,10 +75,6 @@ public class Program
                         lastTypeRefresh = DateTime.UtcNow;
                     }
 
-                    // Zaman penceresi: "aynı saniye"
-                    var now = DateTime.Now;
-                    var secondStart = new DateTime(now.Year, now.Month, now.Day, now.Hour, now.Minute, now.Second, 0);
-
                     // Kaynaktan snapshot (5 sn timeout), olmazsa fallback
                     using var tmo = new CancellationTokenSource(TimeSpan.FromSeconds(SourceWaitSeconds));
                     (decimal Alis, decimal Satis)? snap =
@@ -73,6 +85,7 @@ public class Program
                     if (snap is null)
                     {
                         var last = await db.Exchanges
+                            .AsNoTracking()
                             .Where(x => x.AltinTipId == altinTipId)
                             .OrderByDescending(x => x.CreatedDate)
                             .Select(x => new { x.Alis, x.Satis })
@@ -87,82 +100,80 @@ public class Program
                         snap = (last.Alis, last.Satis);
                     }
 
-                    // Aynı saniyede yoksa ekle (atomik)
+                    // Canlı fiyat: her döngüde yaz (ekranlar bunu okur)
                     var sql = @"
 INSERT INTO Dovizler (AltinTipId, Alis, Satis, CreatedDate)
 VALUES (@AltinTipId, @Alis, @Satis, GETDATE());
 ";
 
-                    int affected = await db.Database.ExecuteSqlRawAsync(
+                    await db.Database.ExecuteSqlRawAsync(
                         sql,
                         new SqlParameter("@AltinTipId", altinTipId),
                         new SqlParameter("@Alis", snap.Value.Alis),
                         new SqlParameter("@Satis", snap.Value.Satis));
 
-
-                    var mode = await db.ExchangeModeValues
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(x => x.SelectedMod, _cts.Token);
-
-                    if (mode is not null)
+                    // Geçmiş: 60 sn'de bir yaz. Her tick'te yazmak DovizGecmisi'ni
+                    // günde ~8600 satır şişiriyordu (ve satır çok geniş).
+                    if ((DateTime.UtcNow - lastHistoryWrite).TotalSeconds >= 60)
                     {
-                        // Lokal fonksiyonlar
-                        decimal F(decimal c, decimal v) => Math.Round(c * v, 4, MidpointRounding.AwayFromZero);
-                        decimal SatFromEft(decimal eft) => Math.Round(eft / (1 - 0.05m), 4, MidpointRounding.AwayFromZero);
+                        var mode = await db.ExchangeModeValues
+                            .AsNoTracking()
+                            .FirstOrDefaultAsync(x => x.SelectedMod, _cts.Token);
 
-                        // Snap'ten gelen o anki Alış/Satış fiyatları
-                        var guncelAlis = snap.Value.Alis;
-                        var guncelSatis = snap.Value.Satis;
-
-                        // EFT fiyat hesaplamaları
-                        var gram_eft = F(mode.GramAltinSatis, guncelSatis);
-                        var atacey_eft = F(mode.AtaCeyrekSatis, guncelSatis);
-                        var atayar_eft = F(mode.AtaYarimSatis, guncelSatis);
-                        var atalira_eft = F(mode.AtaLiraSatis, guncelSatis);
-                        var ayar22_eft = F(mode.YirmiIkiAyarSatis, guncelSatis);
-                        var ziycey_eft = F(mode.ZiynetCeyrekSatis, guncelSatis);
-                        var ziyyar_eft = F(mode.ZiynetYarimSatis, guncelSatis);
-                        var zylira_eft = F(mode.ZiynetLiraSatis, guncelSatis);
-
-                        // Mode nesnesi üzerinden yeni History objesini dolduruyoruz
-                        var hist = new ExchangeHistroies
+                        if (mode is not null)
                         {
-                            ModId = mode.Id,
-                            GramAltinAlis = F(mode.GramAltinAlis, guncelAlis),
-                            GramAltinSatisEFT = gram_eft,
-                            GramAltinSatis = SatFromEft(gram_eft),
-                            AtaCeyrekAlis = F(mode.AtaCeyrekAlis, guncelAlis),
-                            AtaCeyrekSatisEFT = atacey_eft,
-                            AtaCeyrekSatis = SatFromEft(atacey_eft),
-                            AtaYarimAlis = F(mode.AtaYarimAlis, guncelAlis),
-                            AtaYarimSatisEFT = atayar_eft,
-                            AtaYarimSatis = SatFromEft(atayar_eft),
-                            AtaLiraAlis = F(mode.AtaLiraAlis, guncelAlis),
-                            AtaLiraSatisEFT = atalira_eft,
-                            AtaLiraSatis = SatFromEft(atalira_eft),
-                            YirmiIkiAyarAlis = F(mode.YirmiIkiAyarAlis, guncelAlis),
-                            YirmiIkiAyarSatisEFT = ayar22_eft,
-                            YirmiIkiAyarSatis = SatFromEft(ayar22_eft),
-                            ZiynetCeyrekAlis = F(mode.ZiynetCeyrekAlis, guncelAlis),
-                            ZiynetCeyrekSatisEFT = ziycey_eft,
-                            ZiynetCeyrekSatis = SatFromEft(ziycey_eft),
-                            ZiynetYarimAlis = F(mode.ZiynetYarimAlis, guncelAlis),
-                            ZiynetYarimSatisEFT = ziyyar_eft,
-                            ZiynetYarimSatis = SatFromEft(ziyyar_eft),
-                            ZiynetLiraAlis = F(mode.ZiynetLiraAlis, guncelAlis),
-                            ZiynetLiraSatisEFT = zylira_eft,
-                            ZiynetLiraSatis = SatFromEft(zylira_eft),
-                            CreatedDate = DateTime.Now // veya döngü başında aldığın 'now' değişkenini verebilirsin
-                        };
+                            decimal F(decimal c, decimal v) => Math.Round(c * v, 4, MidpointRounding.AwayFromZero);
+                            decimal SatFromEft(decimal eft) => Math.Round(eft / (1 - 0.05m), 4, MidpointRounding.AwayFromZero);
 
-                        db.Set<ExchangeHistroies>().Add(hist);
-                        await db.SaveChangesAsync(_cts.Token);
+                            var guncelAlis = snap.Value.Alis;
+                            var guncelSatis = snap.Value.Satis;
 
+                            var gram_eft = F(mode.GramAltinSatis, guncelSatis);
+                            var atacey_eft = F(mode.AtaCeyrekSatis, guncelSatis);
+                            var atayar_eft = F(mode.AtaYarimSatis, guncelSatis);
+                            var atalira_eft = F(mode.AtaLiraSatis, guncelSatis);
+                            var ayar22_eft = F(mode.YirmiIkiAyarSatis, guncelSatis);
+                            var ziycey_eft = F(mode.ZiynetCeyrekSatis, guncelSatis);
+                            var ziyyar_eft = F(mode.ZiynetYarimSatis, guncelSatis);
+                            var zylira_eft = F(mode.ZiynetLiraSatis, guncelSatis);
+
+                            var hist = new ExchangeHistroies
+                            {
+                                ModId = mode.Id,
+                                GramAltinAlis = F(mode.GramAltinAlis, guncelAlis),
+                                GramAltinSatisEFT = gram_eft,
+                                GramAltinSatis = SatFromEft(gram_eft),
+                                AtaCeyrekAlis = F(mode.AtaCeyrekAlis, guncelAlis),
+                                AtaCeyrekSatisEFT = atacey_eft,
+                                AtaCeyrekSatis = SatFromEft(atacey_eft),
+                                AtaYarimAlis = F(mode.AtaYarimAlis, guncelAlis),
+                                AtaYarimSatisEFT = atayar_eft,
+                                AtaYarimSatis = SatFromEft(atayar_eft),
+                                AtaLiraAlis = F(mode.AtaLiraAlis, guncelAlis),
+                                AtaLiraSatisEFT = atalira_eft,
+                                AtaLiraSatis = SatFromEft(atalira_eft),
+                                YirmiIkiAyarAlis = F(mode.YirmiIkiAyarAlis, guncelAlis),
+                                YirmiIkiAyarSatisEFT = ayar22_eft,
+                                YirmiIkiAyarSatis = SatFromEft(ayar22_eft),
+                                ZiynetCeyrekAlis = F(mode.ZiynetCeyrekAlis, guncelAlis),
+                                ZiynetCeyrekSatisEFT = ziycey_eft,
+                                ZiynetCeyrekSatis = SatFromEft(ziycey_eft),
+                                ZiynetYarimAlis = F(mode.ZiynetYarimAlis, guncelAlis),
+                                ZiynetYarimSatisEFT = ziyyar_eft,
+                                ZiynetYarimSatis = SatFromEft(ziyyar_eft),
+                                ZiynetLiraAlis = F(mode.ZiynetLiraAlis, guncelAlis),
+                                ZiynetLiraSatisEFT = zylira_eft,
+                                ZiynetLiraSatis = SatFromEft(zylira_eft),
+                                CreatedDate = DateTime.Now
+                            };
+
+                            db.Set<ExchangeHistroies>().Add(hist);
+                            await db.SaveChangesAsync(_cts.Token);
+                            lastHistoryWrite = DateTime.UtcNow;
+                        }
                     }
 
                     // Uzun ömürlü context: her döngüde change-tracker'ı temizle.
-                    // Aksi halde eklenen/okunan entity'ler izlenmeye devam eder,
-                    // tracker sonsuza dek büyür ve SaveChanges giderek yavaşlar + bellek şişer.
                     db.ChangeTracker.Clear();
                 }
                 catch (OperationCanceledException) when (_cts.IsCancellationRequested) { }

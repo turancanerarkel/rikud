@@ -1017,8 +1017,8 @@
         // simulatePriceUpdates();
         fetchPrices();
 
-        // API Integration - 2 saniyede bir fiyat kontrolü (cache de 2 sn)
-        setInterval(fetchPrices, 2000);
+        // API Integration - 3 saniyede bir fiyat kontrolü (ConsoleApp yazma aralığı ile aynı)
+        setInterval(fetchPrices, 3000);
 
         // Keyboard shortcuts
         document.addEventListener('keydown', (e) => {

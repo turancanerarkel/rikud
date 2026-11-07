@@ -161,93 +161,78 @@ namespace Rikud.WebUI.Controllers
         //}
 
 
+        // LivePrices cache stampede kilidi: expire anında 10 ekranın hepsi
+        // aynı anda DB'ye gitmesin diye tek yazıcı bırakır.
+        private static readonly SemaphoreSlim _livePricesLock = new(1, 1);
+
         [HttpGet]
         public async Task<IActionResult> LivePrices([FromServices] IMemoryCache cache)
         {
-            // Veriyi cache'de arıyoruz. Yoksa veya 1 saniyelik süresi dolmuşsa içerdeki bloğa girip DB'den çekecek.
-            var result = await cache.GetOrCreateAsync<object>("LivePricesData", async entry =>
+            if (cache.TryGetValue("LivePricesData", out object? cached) && cached is not null)
+                return Json(cached);
+
+            await _livePricesLock.WaitAsync();
+            try
             {
-                // Cache 2 sn: DB'ye en fazla ~1 sorgu/2sn gider (paylaşımlı cache).
-                // Frontend poll'ü de 2 sn olduğu için görsel gecikme olmaz.
-                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(2);
+                // Çift kontrol: kilit beklerken başka thread doldurmuş olabilir
+                if (cache.TryGetValue("LivePricesData", out cached) && cached is not null)
+                    return Json(cached);
 
                 const decimal eftDiscount = 0.05m;
-                var since = DateTime.Now.AddDays(-2);
 
                 var mode = await _db.ExchangeModeValues
                     .AsNoTracking()
                     .FirstOrDefaultAsync(x => x.SelectedMod);
 
-                if (mode is null) return new { ok = false, message = "Seçili mod yok." };
+                if (mode is null)
+                    return Json(new { ok = false, message = "Seçili mod yok." });
 
+                // ConsoleApp tek AltinTipId yazar. Son 2 gün GroupBy + OrderBy
+                // 2M satırda SQL'i öldürüyordu. Index seek ile TEK satır al.
                 var latest = await _db.Exchanges
                     .AsNoTracking()
-                    .Where(x => x.CreatedDate >= since)
-                    .GroupBy(x => x.AltinTipId)
-                    .Select(g => g.OrderByDescending(x => x.CreatedDate).First())
-                    .ToListAsync();
+                    .OrderByDescending(x => x.CreatedDate)
+                    .FirstOrDefaultAsync();
 
-                if (latest.Count == 0) return new { ok = false, message = "Exchange verisi yok." };
-
-                Exchanges Fallback() => latest[0];
-
-                // DİKKAT: Buradaki ID'leri veritabanındaki gerçek altın ID'lerinle değiştirmelisin!
-                // Yoksa hepsi Fallback() değerini yani aynı fiyatı döner.
-                int? idGram = 1, idAtaCeyrek = 2, idAtaYarim = 3, idAtaLira = 4,
-                     id22Ayar = 5, idZiyCeyrek = 6, idZiyYarim = 7, idZiyLira = 8;
-
-                Exchanges Ex(int? tipId)
-                {
-                    if (tipId.HasValue)
-                    {
-                        var found = latest.FirstOrDefault(x => x.AltinTipId == tipId.Value);
-                        if (found != null) return found;
-                    }
-                    return Fallback();
-                }
+                if (latest is null)
+                    return Json(new { ok = false, message = "Exchange verisi yok." });
 
                 decimal R2(decimal v) => Math.Round(v, 2, MidpointRounding.AwayFromZero);
                 decimal Mul(decimal k, decimal p) => R2(k * p);
-
-                decimal Al(Exchanges ex, decimal coef) => Mul(coef, ex.Alis);
-                decimal SatBase(Exchanges ex, decimal coef) => Mul(coef, ex.Satis);
+                decimal Al(decimal coef) => Mul(coef, latest.Alis);
+                decimal SatBase(decimal coef) => Mul(coef, latest.Satis);
                 decimal SatListFromEFT(decimal satBase) => R2(satBase / (1m - eftDiscount));
 
-                var gramEx = Ex(idGram);
-                var ataCyrEx = Ex(idAtaCeyrek);
-                var ataYarEx = Ex(idAtaYarim);
-                var ataLiraEx = Ex(idAtaLira);
-                var ayar22Ex = Ex(id22Ayar);
-                var ziyCyrEx = Ex(idZiyCeyrek);
-                var ziyYarEx = Ex(idZiyYarim);
-                var ziyLiraEx = Ex(idZiyLira);
+                var gram_sat_eft = SatBase(mode.GramAltinSatis);
+                var atacey_sat_eft = SatBase(mode.AtaCeyrekSatis);
+                var atayar_sat_eft = SatBase(mode.AtaYarimSatis);
+                var atalir_sat_eft = SatBase(mode.AtaLiraSatis);
+                var bilezik_sat_eft = SatBase(mode.YirmiIkiAyarSatis);
+                var ziycey_sat_eft = SatBase(mode.ZiynetCeyrekSatis);
+                var ziyyar_sat_eft = SatBase(mode.ZiynetYarimSatis);
+                var zylira_sat_eft = SatBase(mode.ZiynetLiraSatis);
 
-                // Baz EFT satışları
-                var gram_sat_eft = SatBase(gramEx, mode.GramAltinSatis);
-                var atacey_sat_eft = SatBase(ataCyrEx, mode.AtaCeyrekSatis);
-                var atayar_sat_eft = SatBase(ataYarEx, mode.AtaYarimSatis);
-                var atalir_sat_eft = SatBase(ataLiraEx, mode.AtaLiraSatis);
-                var bilezik_sat_eft = SatBase(ayar22Ex, mode.YirmiIkiAyarSatis);
-                var ziycey_sat_eft = SatBase(ziyCyrEx, mode.ZiynetCeyrekSatis);
-                var ziyyar_sat_eft = SatBase(ziyYarEx, mode.ZiynetYarimSatis);
-                var zylira_sat_eft = SatBase(ziyLiraEx, mode.ZiynetLiraSatis);
-
-                // Hazırlanan veriyi döndür (Cache'e yazılacak)
-                return new
+                var result = new
                 {
                     ok = true,
-                    gram = new { al = Al(gramEx, mode.GramAltinAlis), sat = SatListFromEFT(gram_sat_eft), sat_discount = gram_sat_eft },
-                    ataceyrek = new { al = Al(ataCyrEx, mode.AtaCeyrekAlis), sat = SatListFromEFT(atacey_sat_eft), sat_discount = atacey_sat_eft },
-                    atayarim = new { al = Al(ataYarEx, mode.AtaYarimAlis), sat = SatListFromEFT(atayar_sat_eft), sat_discount = atayar_sat_eft },
-                    atalira = new { al = Al(ataLiraEx, mode.AtaLiraAlis), sat = SatListFromEFT(atalir_sat_eft), sat_discount = atalir_sat_eft },
-                    bilezik = new { al = Al(ayar22Ex, mode.YirmiIkiAyarAlis), sat = SatListFromEFT(bilezik_sat_eft), sat_discount = bilezik_sat_eft },
-                    ziyceyrek = new { al = Al(ziyCyrEx, mode.ZiynetCeyrekAlis), sat = SatListFromEFT(ziycey_sat_eft), sat_discount = ziycey_sat_eft },
-                    ziyyarim = new { al = Al(ziyYarEx, mode.ZiynetYarimAlis), sat = SatListFromEFT(ziyyar_sat_eft), sat_discount = ziyyar_sat_eft },
-                    ziylira = new { al = Al(ziyLiraEx, mode.ZiynetLiraAlis), sat = SatListFromEFT(zylira_sat_eft), sat_discount = zylira_sat_eft }
+                    gram = new { al = Al(mode.GramAltinAlis), sat = SatListFromEFT(gram_sat_eft), sat_discount = gram_sat_eft },
+                    ataceyrek = new { al = Al(mode.AtaCeyrekAlis), sat = SatListFromEFT(atacey_sat_eft), sat_discount = atacey_sat_eft },
+                    atayarim = new { al = Al(mode.AtaYarimAlis), sat = SatListFromEFT(atayar_sat_eft), sat_discount = atayar_sat_eft },
+                    atalira = new { al = Al(mode.AtaLiraAlis), sat = SatListFromEFT(atalir_sat_eft), sat_discount = atalir_sat_eft },
+                    bilezik = new { al = Al(mode.YirmiIkiAyarAlis), sat = SatListFromEFT(bilezik_sat_eft), sat_discount = bilezik_sat_eft },
+                    ziyceyrek = new { al = Al(mode.ZiynetCeyrekAlis), sat = SatListFromEFT(ziycey_sat_eft), sat_discount = ziycey_sat_eft },
+                    ziyyarim = new { al = Al(mode.ZiynetYarimAlis), sat = SatListFromEFT(ziyyar_sat_eft), sat_discount = ziyyar_sat_eft },
+                    ziylira = new { al = Al(mode.ZiynetLiraAlis), sat = SatListFromEFT(zylira_sat_eft), sat_discount = zylira_sat_eft }
                 };
-            });
 
-            return Json(result);
+                // 3 sn cache: poll ile aynı; stampede kilidi ile DB'ye en fazla 1 sorgu/3sn
+                cache.Set("LivePricesData", result, TimeSpan.FromSeconds(3));
+                return Json(result);
+            }
+            finally
+            {
+                _livePricesLock.Release();
+            }
         }
 
         [HttpGet]
@@ -382,43 +367,115 @@ namespace Rikud.WebUI.Controllers
             var start = new DateTime(day.Year, day.Month, day.Day, fromHour, 0, 0, DateTimeKind.Local);
             var end = new DateTime(day.Year, day.Month, day.Day, toHour, 0, 0, DateTimeKind.Local);
 
-            // Sorgu: ExchangeHistroies (aralığa düşenler)
-            var q = _db.ExchangeHistroies
-                .AsNoTracking()
-                .Where(x => x.CreatedDate >= start && x.CreatedDate < end)
-                .OrderBy(x => x.CreatedDate);
+            // Canlı: son 7 gün (DovizGecmisi). Eski: DovizGecmisi_arc.
+            // Saat aralığı hangi tarafa düşüyorsa oradan oku; sınırda ikisini birleştir.
+            const int retentionDays = 7;
+            var cutoff = DateTime.Now.AddDays(-retentionDays);
 
-            var items = await q
+            var rows = new List<(
+                decimal gramAltinAlis, decimal gramAltinSatis, decimal gramAltinSatisEFT,
+                decimal ataCeyrekAlis, decimal ataCeyrekSatis, decimal ataCeyrekSatisEFT,
+                decimal ataYarimAlis, decimal ataYarimSatis, decimal ataYarimSatisEFT,
+                decimal ataLiraAlis, decimal ataLiraSatis, decimal ataLiraSatisEFT,
+                decimal yirmiIkiAyarAlis, decimal yirmiIkiAyarSatis, decimal yirmiIkiAyarSatisEFT,
+                decimal ziynetCeyrekAlis, decimal ziynetCeyrekSatis, decimal ziynetCeyrekSatisEFT,
+                decimal ziynetYarimAlis, decimal ziynetYarimSatis, decimal ziynetYarimSatisEFT,
+                decimal ziynetLiraAlis, decimal ziynetLiraSatis, decimal ziynetLiraSatisEFT,
+                DateTime createdDate)>();
+
+            if (end > cutoff)
+            {
+                var live = await _db.ExchangeHistroies
+                    .AsNoTracking()
+                    .Where(x => x.CreatedDate >= start && x.CreatedDate < end)
+                    .Select(x => new
+                    {
+                        x.GramAltinAlis, x.GramAltinSatis, x.GramAltinSatisEFT,
+                        x.AtaCeyrekAlis, x.AtaCeyrekSatis, x.AtaCeyrekSatisEFT,
+                        x.AtaYarimAlis, x.AtaYarimSatis, x.AtaYarimSatisEFT,
+                        x.AtaLiraAlis, x.AtaLiraSatis, x.AtaLiraSatisEFT,
+                        x.YirmiIkiAyarAlis, x.YirmiIkiAyarSatis, x.YirmiIkiAyarSatisEFT,
+                        x.ZiynetCeyrekAlis, x.ZiynetCeyrekSatis, x.ZiynetCeyrekSatisEFT,
+                        x.ZiynetYarimAlis, x.ZiynetYarimSatis, x.ZiynetYarimSatisEFT,
+                        x.ZiynetLiraAlis, x.ZiynetLiraSatis, x.ZiynetLiraSatisEFT,
+                        x.CreatedDate
+                    })
+                    .ToListAsync();
+
+                rows.AddRange(live.Select(x => (
+                    x.GramAltinAlis, x.GramAltinSatis, x.GramAltinSatisEFT,
+                    x.AtaCeyrekAlis, x.AtaCeyrekSatis, x.AtaCeyrekSatisEFT,
+                    x.AtaYarimAlis, x.AtaYarimSatis, x.AtaYarimSatisEFT,
+                    x.AtaLiraAlis, x.AtaLiraSatis, x.AtaLiraSatisEFT,
+                    x.YirmiIkiAyarAlis, x.YirmiIkiAyarSatis, x.YirmiIkiAyarSatisEFT,
+                    x.ZiynetCeyrekAlis, x.ZiynetCeyrekSatis, x.ZiynetCeyrekSatisEFT,
+                    x.ZiynetYarimAlis, x.ZiynetYarimSatis, x.ZiynetYarimSatisEFT,
+                    x.ZiynetLiraAlis, x.ZiynetLiraSatis, x.ZiynetLiraSatisEFT,
+                    x.CreatedDate)));
+            }
+
+            if (start < cutoff)
+            {
+                var arc = await _db.ExchangeHistroiesArc
+                    .AsNoTracking()
+                    .Where(x => x.CreatedDate >= start && x.CreatedDate < end)
+                    .Select(x => new
+                    {
+                        x.GramAltinAlis, x.GramAltinSatis, x.GramAltinSatisEFT,
+                        x.AtaCeyrekAlis, x.AtaCeyrekSatis, x.AtaCeyrekSatisEFT,
+                        x.AtaYarimAlis, x.AtaYarimSatis, x.AtaYarimSatisEFT,
+                        x.AtaLiraAlis, x.AtaLiraSatis, x.AtaLiraSatisEFT,
+                        x.YirmiIkiAyarAlis, x.YirmiIkiAyarSatis, x.YirmiIkiAyarSatisEFT,
+                        x.ZiynetCeyrekAlis, x.ZiynetCeyrekSatis, x.ZiynetCeyrekSatisEFT,
+                        x.ZiynetYarimAlis, x.ZiynetYarimSatis, x.ZiynetYarimSatisEFT,
+                        x.ZiynetLiraAlis, x.ZiynetLiraSatis, x.ZiynetLiraSatisEFT,
+                        x.CreatedDate
+                    })
+                    .ToListAsync();
+
+                rows.AddRange(arc.Select(x => (
+                    x.GramAltinAlis, x.GramAltinSatis, x.GramAltinSatisEFT,
+                    x.AtaCeyrekAlis, x.AtaCeyrekSatis, x.AtaCeyrekSatisEFT,
+                    x.AtaYarimAlis, x.AtaYarimSatis, x.AtaYarimSatisEFT,
+                    x.AtaLiraAlis, x.AtaLiraSatis, x.AtaLiraSatisEFT,
+                    x.YirmiIkiAyarAlis, x.YirmiIkiAyarSatis, x.YirmiIkiAyarSatisEFT,
+                    x.ZiynetCeyrekAlis, x.ZiynetCeyrekSatis, x.ZiynetCeyrekSatisEFT,
+                    x.ZiynetYarimAlis, x.ZiynetYarimSatis, x.ZiynetYarimSatisEFT,
+                    x.ZiynetLiraAlis, x.ZiynetLiraSatis, x.ZiynetLiraSatisEFT,
+                    x.CreatedDate)));
+            }
+
+            var items = rows
+                .OrderBy(x => x.createdDate)
                 .Select(x => new
                 {
-                    // Grid’de kullandıklarımız:
-                    gramAltinAlis = x.GramAltinAlis,
-                    gramAltinSatis = x.GramAltinSatis,
-                    gramAltinSatisEFT = x.GramAltinSatisEFT,
-                    ataCeyrekAlis = x.AtaCeyrekAlis,
-                    ataCeyrekSatis = x.AtaCeyrekSatis,
-                    ataCeyrekSatisEFT = x.AtaCeyrekSatisEFT,
-                    ataYarimAlis = x.AtaYarimAlis,
-                    ataYarimSatis = x.AtaYarimSatis,
-                    ataYarimSatisEFT = x.AtaYarimSatisEFT,
-                    ataLiraAlis = x.AtaLiraAlis,
-                    ataLiraSatis = x.AtaLiraSatis,
-                    ataLiraSatisEFT = x.AtaLiraSatisEFT,
-                    yirmiIkiAyarAlis = x.YirmiIkiAyarAlis,
-                    yirmiIkiAyarSatis = x.YirmiIkiAyarSatis,
-                    yirmiIkiAyarSatisEFT = x.YirmiIkiAyarSatisEFT,
-                    ziynetCeyrekAlis = x.ZiynetCeyrekAlis,
-                    ziynetCeyrekSatis = x.ZiynetCeyrekSatis,
-                    ziynetCeyrekSatisEFT = x.ZiynetCeyrekSatisEFT,
-                    ziynetYarimAlis = x.ZiynetYarimAlis,
-                    ziynetYarimSatis = x.ZiynetYarimSatis,
-                    ziynetYarimSatisEFT = x.ZiynetYarimSatisEFT,
-                    ziynetLiraAlis = x.ZiynetLiraAlis,
-                    ziynetLiraSatis = x.ZiynetLiraSatis,
-                    ziynetLiraSatisEFT = x.ZiynetLiraSatisEFT,
-                    createdDateText = x.CreatedDate.ToString("dd.MM.yyyy HH:mm")
+                    gramAltinAlis = x.gramAltinAlis,
+                    gramAltinSatis = x.gramAltinSatis,
+                    gramAltinSatisEFT = x.gramAltinSatisEFT,
+                    ataCeyrekAlis = x.ataCeyrekAlis,
+                    ataCeyrekSatis = x.ataCeyrekSatis,
+                    ataCeyrekSatisEFT = x.ataCeyrekSatisEFT,
+                    ataYarimAlis = x.ataYarimAlis,
+                    ataYarimSatis = x.ataYarimSatis,
+                    ataYarimSatisEFT = x.ataYarimSatisEFT,
+                    ataLiraAlis = x.ataLiraAlis,
+                    ataLiraSatis = x.ataLiraSatis,
+                    ataLiraSatisEFT = x.ataLiraSatisEFT,
+                    yirmiIkiAyarAlis = x.yirmiIkiAyarAlis,
+                    yirmiIkiAyarSatis = x.yirmiIkiAyarSatis,
+                    yirmiIkiAyarSatisEFT = x.yirmiIkiAyarSatisEFT,
+                    ziynetCeyrekAlis = x.ziynetCeyrekAlis,
+                    ziynetCeyrekSatis = x.ziynetCeyrekSatis,
+                    ziynetCeyrekSatisEFT = x.ziynetCeyrekSatisEFT,
+                    ziynetYarimAlis = x.ziynetYarimAlis,
+                    ziynetYarimSatis = x.ziynetYarimSatis,
+                    ziynetYarimSatisEFT = x.ziynetYarimSatisEFT,
+                    ziynetLiraAlis = x.ziynetLiraAlis,
+                    ziynetLiraSatis = x.ziynetLiraSatis,
+                    ziynetLiraSatisEFT = x.ziynetLiraSatisEFT,
+                    createdDateText = x.createdDate.ToString("dd.MM.yyyy HH:mm")
                 })
-                .ToListAsync();
+                .ToList();
 
             return Json(new
             {
